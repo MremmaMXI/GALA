@@ -1,5 +1,5 @@
 /**
- * GalaManager.gs - Versión V28 corregida y completa (actualizada)
+ * GalaManager.gs - Versión V29 corregida y completa (actualizada)
  *
  * Cambios importantes aplicados (resumen):
  * - Reestructurado layout de tabla: 3 nuevas filas encima de HAB/CONCIERGE.
@@ -71,7 +71,7 @@ const PROP_KEY_UPDATE_LOCK = 'GALA_UPDATE_LOCKED';
 const PROP_KEY_LAST_LOADED_REG_COL = 'GALA_LAST_LOADED_REG_COL';
 const PROP_KEY_LAST_COMBINED_ORIG = 'GALA_LAST_COMBINED_ORIG';
 
-const VERSION_LABEL_TEXT = 'RGManager v113.25.0';
+const VERSION_LABEL_TEXT = 'RGManager v114.25.0';
 const VERSION_LABEL_ROW = 212;
 const VERSION_LABEL_COLOR = '#0b5394';
 
@@ -449,6 +449,28 @@ function updateHoyRow() {
   } catch (e) { Logger.log('updateHoyRow error: ' + e); }
 }
 
+function setHoyRowToDate(dateLabel) {
+  try {
+    const { main } = getSheets();
+    const effWidth = getEffectiveWidth(main, BASE_START_COL, getStoredWidth());
+    const range = main.getRange(TABLE_START_ROW, BASE_START_COL, 1, effWidth);
+    safeBreakApartRange(range);
+    range.merge();
+    const cell = main.getRange(TABLE_START_ROW, BASE_START_COL);
+    cell.setValue(dateLabel)
+        .setBackground('#0c343d')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold')
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setFontSize(14)
+        .setFontStyle('normal')
+        .setWrap(false);
+    // Nunca debe tener dropdown
+    main.getRange(TABLE_START_ROW, BASE_START_COL, 1, effWidth).clearDataValidations();
+  } catch(e) { Logger.log('setHoyRowToDate error: ' + e); }
+}
+
 function updateMostrandoRow(fechaLabel) {
   try {
     const { main } = getSheets();
@@ -508,24 +530,38 @@ function handleDatePicked(dateIso) {
     if (parts.length !== 3) return { ok:false, message:'Formato inválido.' };
 
     const yyyy = parseInt(parts[0],10);
-    const mm = parseInt(parts[1],10) - 1;
-    const dd = parseInt(parts[2],10);
-    const dt = new Date(yyyy, mm, dd);
+    const mm   = parseInt(parts[1],10) - 1;
+    const dd   = parseInt(parts[2],10);
+    const dt   = new Date(yyyy, mm, dd);
     const orig = formatDateDDMMYYYY(dt);
+    const verboseLabel = verboseDateLabelFromOriginal(orig);
 
     try { normalizeStoredWidthToSheet(); } catch(e) { Logger.log('normalizeStoredWidthToSheet err: ' + e); }
-    try { updateSelectorRow(getStoredWidth()); } catch(e) { Logger.log('updateSelectorRow err: ' + e); }
 
-    if (typeof processSelectorByOrig === 'function') {
+    // Verificar si existe en registro
+    const fechas = getRegistroFechaList();
+    if (fechas.indexOf(orig) !== -1) {
+      // Existe → cargar tabla (cargarTablaDesdeRegistro ya actualiza MOSTRANDO_ROW y resetea selector)
       try {
-        processSelectorByOrig(orig);
+        cargarTablaDesdeRegistro(orig);
+        // Sobreescribir la fila 178 con la fecha seleccionada (cargarTablaDesdeRegistro llama updateHoyRow internamente)
+        try { setHoyRowToDate(verboseLabel); } catch(e) { Logger.log('setHoyRowToDate err: ' + e); }
         return { ok:true };
-      } catch (err) {
-        Logger.log('handleDatePicked -> processSelectorByOrig error: ' + err);
+      } catch(err) {
+        Logger.log('handleDatePicked -> cargarTablaDesdeRegistro error: ' + err);
         return { ok:false, message: String(err) };
       }
     } else {
-      return { ok:false, message:'processSelectorByOrig no disponible.' };
+      // No existe → limpiar tabla pero NO sobreescribir fila 178 con HOY
+      try {
+        clearTableAndReset({ skipHoyRow: true });
+        // Actualizar fila 178 con la fecha seleccionada
+        try { setHoyRowToDate(verboseLabel); } catch(e) { Logger.log('setHoyRowToDate err: ' + e); }
+        return { ok:true };
+      } catch(err) {
+        Logger.log('handleDatePicked -> clearTableAndReset error: ' + err);
+        return { ok:false, message: String(err) };
+      }
     }
   } catch (err) {
     Logger.log('handleDatePicked error: ' + err);
@@ -1077,7 +1113,9 @@ function cargarTablaDesdeRegistro(fechaStr) {
   try { updateVersionLabel(); } catch (e) { Logger.log('after cargarTablaDesdeRegistro updateVersionLabel failed: ' + e); }
 }
 
-function clearTableAndReset() {
+function clearTableAndReset(opts) {
+  opts = opts || {};
+  const skipHoyRow = opts.skipHoyRow === true;
   const { main } = getSheets();
   const tableStartCol = BASE_START_COL;
 
@@ -1104,7 +1142,9 @@ function clearTableAndReset() {
   try { PropertiesService.getDocumentProperties().deleteProperty(PROP_KEY_LAST_COMBINED_ORIG); } catch(e){}
 
   setStoredWidth(BASE_WIDTH);
-  updateHoyRow();
+  if (!skipHoyRow) {
+    updateHoyRow();
+  }
   updateSelectorRow(BASE_WIDTH);
   for (let p = 0; p < BASE_PAIRS; p++) {
     const habCol = tableStartCol + p*2;
