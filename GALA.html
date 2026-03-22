@@ -1,5 +1,5 @@
 /**
- * GalaManager.gs - Versión V29 corregida y completa (actualizada)
+ * GalaManager.gs - Versión V30 corregida y completa (actualizada)
  *
  * Cambios importantes aplicados (resumen):
  * - Reestructurado layout de tabla: 3 nuevas filas encima de HAB/CONCIERGE.
@@ -71,7 +71,7 @@ const PROP_KEY_UPDATE_LOCK = 'GALA_UPDATE_LOCKED';
 const PROP_KEY_LAST_LOADED_REG_COL = 'GALA_LAST_LOADED_REG_COL';
 const PROP_KEY_LAST_COMBINED_ORIG = 'GALA_LAST_COMBINED_ORIG';
 
-const VERSION_LABEL_TEXT = 'RGManager v114.25.0';
+const VERSION_LABEL_TEXT = 'RGManager v115.25.0';
 const VERSION_LABEL_ROW = 212;
 const VERSION_LABEL_COLOR = '#0b5394';
 
@@ -538,12 +538,13 @@ function handleDatePicked(dateIso) {
 
     try { normalizeStoredWidthToSheet(); } catch(e) { Logger.log('normalizeStoredWidthToSheet err: ' + e); }
 
-    // Verificar si existe en registro
-    const fechas = getRegistroFechaList();
-    if (fechas.indexOf(orig) !== -1) {
+    // Buscar usando buildFechaMapFromRegistro (igual que onEdit / selector fila 179)
+    // porque las fechas en REGISTRO_GALA fila 1 están en formato verboso
+    const map = buildFechaMapFromRegistro();
+    if (map[verboseLabel]) {
       // Existe → cargar tabla (cargarTablaDesdeRegistro ya actualiza MOSTRANDO_ROW y resetea selector)
       try {
-        cargarTablaDesdeRegistro(orig);
+        cargarTablaDesdeRegistro(map[verboseLabel]);
         // Sobreescribir la fila 178 con la fecha seleccionada (cargarTablaDesdeRegistro llama updateHoyRow internamente)
         try { setHoyRowToDate(verboseLabel); } catch(e) { Logger.log('setHoyRowToDate err: ' + e); }
         return { ok:true };
