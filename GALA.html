@@ -1,5 +1,5 @@
 /**
- * GalaManager.gs - Versión V27 corregida y completa (actualizada)
+ * GalaManager.gs - Versión V28 corregida y completa (actualizada)
  *
  * Cambios importantes aplicados (resumen):
  * - Reestructurado layout de tabla: 3 nuevas filas encima de HAB/CONCIERGE.
@@ -71,7 +71,7 @@ const PROP_KEY_UPDATE_LOCK = 'GALA_UPDATE_LOCKED';
 const PROP_KEY_LAST_LOADED_REG_COL = 'GALA_LAST_LOADED_REG_COL';
 const PROP_KEY_LAST_COMBINED_ORIG = 'GALA_LAST_COMBINED_ORIG';
 
-const VERSION_LABEL_TEXT = 'RGManager v112.25.0';
+const VERSION_LABEL_TEXT = 'RGManager v113.25.0';
 const VERSION_LABEL_ROW = 212;
 const VERSION_LABEL_COLOR = '#0b5394';
 
@@ -445,6 +445,7 @@ function updateHoyRow() {
         .setFontSize(14)
         .setFontStyle('normal')
         .setWrap(false);
+    main.getRange(TABLE_START_ROW, BASE_START_COL, 1, effWidth).clearDataValidations();
   } catch (e) { Logger.log('updateHoyRow error: ' + e); }
 }
 
@@ -553,6 +554,10 @@ function updateSelectorRow(width) {
        .setVerticalAlignment('middle')
        .setFontSize(12)
        .setWrap(false);
+    // Limpiar validaciones que se derraman del merge del selector a filas vecinas
+    try { main.getRange(TABLE_START_ROW, tableStartCol, 1, eff).clearDataValidations(); } catch(e){}
+    try { main.getRange(MOSTRANDO_ROW, tableStartCol, 1, eff).clearDataValidations(); } catch(e){}
+    try { main.getRange(TITLES_ROW, tableStartCol, 1, eff).clearDataValidations(); } catch(e){}
     return;
   } catch (err) {
     Logger.log('updateSelectorRow merge attempt failed: ' + err);
@@ -1214,6 +1219,7 @@ function enforcePairStructure(sheet, startCol, width) {
     habRange.setFontWeight('normal').setFontColor('#000000').setHorizontalAlignment('center').setVerticalAlignment('middle');
     chipRange.setFontWeight('normal').setFontColor('#215a6c').setHorizontalAlignment('center').setVerticalAlignment('middle');
     try {
+      try { sheet.getRange(TITLES_ROW, habCol, 1, 2).clearDataValidations(); } catch(e){}
       sheet.getRange(TITLES_ROW, habCol).setValue('HAB');
       sheet.getRange(TITLES_ROW, chipCol).setValue('CONCIERGE');
       sheet.getRange(TITLES_ROW, habCol, 1, 2)
