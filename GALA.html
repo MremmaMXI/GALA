@@ -1,7 +1,19 @@
 /**
- * GalaManager.gs - Versión V26 corregida y completa (actualizada)
+ * GalaManager.gs - Versión V27 corregida y completa (actualizada)
  *
  * Cambios importantes aplicados (resumen):
+ * - Reestructurado layout de tabla: 3 nuevas filas encima de HAB/CONCIERGE.
+ *   Fila 178 (TABLE_START_ROW): "Fecha de hoy" — solo informativa, cambia automáticamente.
+ *   Fila 179 (SELECTOR_ROW): "Seleccionar fecha" — dropdown con fechas del registro.
+ *   Fila 180 (MOSTRANDO_ROW): "Mostrando: [fecha]" — muestra qué fecha está cargada.
+ *   Fila 181 (TITLES_ROW): HAB / CONCIERGE — antes en fila 179.
+ *   Filas 182–210 (DATA_START_ROW..DATA_END_ROW): 29 filas de datos.
+ *   Fila 212 (VERSION_LABEL_ROW): etiqueta de versión.
+ * - updateHoyRow(): nueva función que actualiza la fila 178 con la fecha de hoy.
+ * - updateMostrandoRow(fechaLabel): nueva función que actualiza la fila 180.
+ * - updateSelectorRow(): renombrada de ensureSelectorMergedAndStyled(), opera en fila 179.
+ * - Selector siempre regresa a "Seleccionar fecha" después de cargar una fecha.
+ * - Eliminado bloqueo de 3 minutos post-archivo.
  * - Detecta el ancho REAL ocupado por la tabla (escaneando contenido y merges) y usa ese ancho
  *   para copiar a REGISTRO_GALA y para limpiar/contraer en la hoja principal.
  * - archivar(): ahora copia TODAS las columnas ocupadas (no solo storedWidth), y luego
@@ -11,7 +23,6 @@
  *   antes de escribir para evitar solapes/residuos que impidan carga.
  * - safeBreakApartRange / safeMergeRange usados ampliamente para evitar excepciones de merges.
  * - Añadido detectActualTableWidth() y helpers relacionados.
- * - dailyUpdateSelector() respeta selecciones manuales; actualiza solo si vacío o ayer.
  *
  * Nota: Haz backup del script actual antes de reemplazar.
  */
@@ -21,11 +32,13 @@
 const MAIN_SHEET_NAME = 'MENSAJES GALA JOIA';
 const REG_SHEET_NAME = 'REGISTRO_GALA';
 
-const TABLE_START_ROW = 178;
-const TITLES_ROW = 179;
-const DATA_START_ROW = 180;
-const DATA_END_ROW = 208;
-const TABLE_ROWS = DATA_END_ROW - TABLE_START_ROW + 1;
+const TABLE_START_ROW = 178;   // fila "Fecha de hoy" — solo informativa
+const SELECTOR_ROW = 179;      // fila "Seleccionar fecha" — dropdown de fechas
+const MOSTRANDO_ROW = 180;     // fila "Mostrando: [fecha]" — informativa
+const TITLES_ROW = 181;        // fila de títulos HAB / CONCIERGE
+const DATA_START_ROW = 182;    // primera fila de datos
+const DATA_END_ROW = 210;      // última fila de datos
+const TABLE_ROWS = DATA_END_ROW - TABLE_START_ROW + 1; // 33
 
 const BASE_START_COL_LETTER = 'X';
 const BASE_START_COL = columnLetterToIndex(BASE_START_COL_LETTER);
@@ -58,8 +71,8 @@ const PROP_KEY_UPDATE_LOCK = 'GALA_UPDATE_LOCKED';
 const PROP_KEY_LAST_LOADED_REG_COL = 'GALA_LAST_LOADED_REG_COL';
 const PROP_KEY_LAST_COMBINED_ORIG = 'GALA_LAST_COMBINED_ORIG';
 
-const VERSION_LABEL_TEXT = 'RGManager v111.25.0';
-const VERSION_LABEL_ROW = 210;
+const VERSION_LABEL_TEXT = 'RGManager v112.25.0';
+const VERSION_LABEL_ROW = 212;
 const VERSION_LABEL_COLOR = '#0b5394';
 
 // Nota: la "pared" está definida pero ahora el flujo de archivar contraerá la tabla
@@ -414,6 +427,56 @@ function updateVersionLabel() {
   } catch (err) { Logger.log('updateVersionLabel error: ' + err); }
 }
 
+/* ---------------------- NUEVA FILA HOY & MOSTRANDO ---------------------- */
+function updateHoyRow() {
+  try {
+    const { main } = getSheets();
+    const effWidth = getEffectiveWidth(main, BASE_START_COL, getStoredWidth());
+    const range = main.getRange(TABLE_START_ROW, BASE_START_COL, 1, effWidth);
+    safeBreakApartRange(range);
+    range.merge();
+    const cell = main.getRange(TABLE_START_ROW, BASE_START_COL);
+    cell.setValue(verboseDateLabelFromOriginal(todayStr()));
+    cell.setBackground('#0c343d')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold')
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setFontSize(14)
+        .setFontStyle('normal')
+        .setWrap(false);
+  } catch (e) { Logger.log('updateHoyRow error: ' + e); }
+}
+
+function updateMostrandoRow(fechaLabel) {
+  try {
+    const { main } = getSheets();
+    const effWidth = getEffectiveWidth(main, BASE_START_COL, getStoredWidth());
+    const range = main.getRange(MOSTRANDO_ROW, BASE_START_COL, 1, effWidth);
+    safeBreakApartRange(range);
+    range.merge();
+    const cell = main.getRange(MOSTRANDO_ROW, BASE_START_COL);
+    cell.setBackground('#0c343d');
+    if (fechaLabel) {
+      cell.setValue('Mostrando: ' + fechaLabel)
+          .setFontColor('#ffffff')
+          .setFontStyle('italic')
+          .setFontSize(11)
+          .setHorizontalAlignment('center')
+          .setVerticalAlignment('middle')
+          .setFontWeight('normal');
+    } else {
+      cell.setValue('selecciona una fecha')
+          .setFontColor('#9aa7b0')
+          .setFontStyle('italic')
+          .setFontSize(11)
+          .setHorizontalAlignment('center')
+          .setVerticalAlignment('middle')
+          .setFontWeight('normal');
+    }
+  } catch (e) { Logger.log('updateMostrandoRow error: ' + e); }
+}
+
 /* ---------------------- onOpen / MENU ---------------------- */
 function onOpen() {
   try { addManualGalaMenu(); } catch(e){ Logger.log('addManualGalaMenu skipped: ' + e); }
@@ -423,11 +486,10 @@ function onOpen() {
   } catch(e){ Logger.log('onOpen menu creation skipped: ' + e); }
   try {
     normalizeStoredWidthToSheet();
-    ensureSelectorMergedAndStyled();
+    updateHoyRow();
+    updateSelectorRow();
     updateFechaDropdown();
-    const { main } = getSheets();
-    const selCell = main.getRange(TABLE_START_ROW, BASE_START_COL);
-    if ((selCell.getDisplayValue() + '').trim() === '') selCell.setValue(verboseDateLabelFromOriginal(todayStr()));
+    updateMostrandoRow(null);
     ensureConciergeValidationOnBase();
     removeExtraEmptyColumns();
   } catch (err) { Logger.log('onOpen error: ' + err); }
@@ -451,10 +513,7 @@ function handleDatePicked(dateIso) {
     const orig = formatDateDDMMYYYY(dt);
 
     try { normalizeStoredWidthToSheet(); } catch(e) { Logger.log('normalizeStoredWidthToSheet err: ' + e); }
-    try { ensureSelectorMergedAndStyled(getStoredWidth()); } catch(e) { Logger.log('ensureSelectorMergedAndStyled err: ' + e); }
-
-    const { main } = getSheets();
-    main.getRange(TABLE_START_ROW, BASE_START_COL).setValue(verboseDateLabelFromOriginal(orig));
+    try { updateSelectorRow(getStoredWidth()); } catch(e) { Logger.log('updateSelectorRow err: ' + e); }
 
     if (typeof processSelectorByOrig === 'function') {
       try {
@@ -474,53 +533,53 @@ function handleDatePicked(dateIso) {
 }
 
 /* ---------------------- SELECTOR MERGE & STYLE ---------------------- */
-function ensureSelectorMergedAndStyled(width) {
+function updateSelectorRow(width) {
   const { main } = getSheets();
   const tableStartCol = BASE_START_COL;
   normalizeStoredWidthToSheet();
   const requested = (typeof width === 'number' && width >= BASE_WIDTH) ? width : getStoredWidth();
   const eff = getEffectiveWidth(main, tableStartCol, requested);
-  const range = main.getRange(TABLE_START_ROW, tableStartCol, 1, eff);
+  const range = main.getRange(SELECTOR_ROW, tableStartCol, 1, eff);
 
   // Intentar merge seguro; si no, fallback visual por celda (sin lanzar excepciones).
   try {
     safeBreakApartRange(range);
     safeMergeRange(range);
-    const sel = main.getRange(TABLE_START_ROW, tableStartCol);
+    const sel = main.getRange(SELECTOR_ROW, tableStartCol);
     sel.setBackground(SELECTOR_COLOR)
        .setFontColor('#ffffff')
        .setFontWeight('bold')
        .setHorizontalAlignment('center')
        .setVerticalAlignment('middle')
-       .setFontSize(14)
+       .setFontSize(12)
        .setWrap(false);
     return;
   } catch (err) {
-    Logger.log('ensureSelectorMergedAndStyled merge attempt failed: ' + err);
+    Logger.log('updateSelectorRow merge attempt failed: ' + err);
   }
 
   // Fallback visual sin merge
   try {
     safeBreakApartRange(range);
-    const firstCell = main.getRange(TABLE_START_ROW, tableStartCol);
+    const firstCell = main.getRange(SELECTOR_ROW, tableStartCol);
     const val = firstCell.getDisplayValue();
     firstCell.setValue(val);
     for (let c = 0; c < eff; c++) {
       try {
-        const rc = main.getRange(TABLE_START_ROW, tableStartCol + c);
+        const rc = main.getRange(SELECTOR_ROW, tableStartCol + c);
         rc.setBackground(SELECTOR_COLOR);
         rc.setFontColor('#ffffff');
         rc.setFontWeight('bold');
         rc.setHorizontalAlignment('center');
         rc.setVerticalAlignment('middle');
-        rc.setFontSize(14);
+        rc.setFontSize(12);
         if (c !== 0) {
           try { rc.clearContent(); } catch(e){}
         }
       } catch(e){}
     }
   } catch (err2) {
-    Logger.log('ensureSelectorMergedAndStyled fallback error: ' + err2);
+    Logger.log('updateSelectorRow fallback error: ' + err2);
   }
 }
 
@@ -571,10 +630,11 @@ function actualizar() {
       currentWidth += extraEven;
     }
 
-    // Guardamos el nuevo ancho antes de escribir datos
     setStoredWidth(neededWidth);
     const effWidth = getEffectiveWidth(main, tableStartCol, neededWidth);
-    ensureSelectorMergedAndStyled(effWidth);
+    updateHoyRow();
+    updateSelectorRow(effWidth);
+    updateMostrandoRow(null);
 
     enforcePairStructure(main, tableStartCol, effWidth);
 
@@ -613,8 +673,9 @@ function actualizar() {
     main.getRange(TABLE_START_ROW, tableStartCol, TABLE_ROWS, effWidth).setHorizontalAlignment('center').setVerticalAlignment('middle');
 
     updateFechaDropdown();
-    const selCell = main.getRange(TABLE_START_ROW, BASE_START_COL);
-    if ((selCell.getDisplayValue() + '').trim() === '') selCell.setValue(verboseDateLabelFromOriginal(todayStr()));
+    updateHoyRow();
+    updateSelectorRow(effWidth);
+    updateMostrandoRow(null);
 
     // --- LIMPIAR W178 y poner "PEGAR LINK" con formato solicitado ---
     try {
@@ -647,9 +708,10 @@ function archivar() {
   const actualWidth = detectActualTableWidth(main);
   const width = Math.max(BASE_WIDTH, actualWidth);
 
+  // La fila 178 (TABLE_START_ROW) siempre muestra la fecha de hoy
   const selectorLabel = (main.getRange(TABLE_START_ROW, BASE_START_COL).getDisplayValue() + '').trim();
   const map = buildFechaMapFromRegistro();
-  const originalDate = map[selectorLabel] || '';
+  const originalDate = map[selectorLabel] || selectorLabel || '';
 
   // Nuevo: comprobar si se hizo un "combine" y hay una fecha original marcada para solapar
   const props = PropertiesService.getDocumentProperties();
@@ -738,8 +800,8 @@ function archivar() {
   try { if (srcBackgrounds) reg.getRange(1, destStartCol, TABLE_ROWS, width).setBackgrounds(srcBackgrounds); } catch(e){ Logger.log('setBackgrounds dest failed: ' + e); }
   try { if (srcFontColors) reg.getRange(1, destStartCol, TABLE_ROWS, width).setFontColors(srcFontColors); } catch(e){ Logger.log('setFontColors dest failed: ' + e); }
 
-  // Calculate destDataRow mapping
-  const destDataRow = 1 + (DATA_START_ROW - TABLE_START_ROW); // typically 3
+  // Calculate destDataRow mapping: 1 + (DATA_START_ROW - TABLE_START_ROW) = 1 + 4 = 5
+  const destDataRow = 1 + (DATA_START_ROW - TABLE_START_ROW);
 
   // Apply validations only to data rows
   try {
@@ -749,7 +811,7 @@ function archivar() {
     }
   } catch(e) { Logger.log('setDataValidations dest failed: ' + e); }
 
-  // Header cleanup: merge label safely
+  // Header cleanup: row 1 = fecha de hoy (verbose), rows 2-3 = selector/mostrando (reconstructed), row 4 = titles
   try {
     const labelRange = reg.getRange(1, destStartCol, 1, width);
     try { safeBreakApartRange(labelRange); } catch(e){}
@@ -758,14 +820,16 @@ function archivar() {
     labelRange.setValue(selectorLabelToWrite);
     labelRange.setBackground(SELECTOR_COLOR).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
 
-    try { reg.getRange(1, destStartCol, 2, width).clearDataValidations(); } catch(e){}
+    // Rows 1..(titlesOffset-1) = header rows; clear validations up to titles row in REGISTRO
+    const titlesOffsetInReg = TITLES_ROW - TABLE_START_ROW + 1; // = 4
+    try { reg.getRange(1, destStartCol, titlesOffsetInReg, width).clearDataValidations(); } catch(e){}
     for (let offset = 0; offset < width; offset += 2) {
       const cHab = destStartCol + offset;
       const cChip = cHab + 1;
       try {
-        reg.getRange(2, cHab).setValue('HAB');
-        reg.getRange(2, cChip).setValue('CONCIERGE');
-        reg.getRange(2, cHab, 1, 2).setBackground(TITLE_COLOR).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+        reg.getRange(titlesOffsetInReg, cHab).setValue('HAB');
+        reg.getRange(titlesOffsetInReg, cChip).setValue('CONCIERGE');
+        reg.getRange(titlesOffsetInReg, cHab, 1, 2).setBackground(TITLE_COLOR).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
       } catch(e){}
     }
   } catch(e) { Logger.log('Header cleanup failed: ' + e); }
@@ -796,9 +860,11 @@ function archivar() {
   // Restaurar base X..AA y propiedad
   try {
     setStoredWidth(BASE_WIDTH);
-    ensureSelectorMergedAndStyled(BASE_WIDTH);
+    updateHoyRow();
+    updateSelectorRow(BASE_WIDTH);
+    updateMostrandoRow(null);
 
-    // Set titles HAB/CONCIERGE in X179..AA179 and style
+    // Set titles HAB/CONCIERGE in X181..AA181 and style
     for (let p = 0; p < BASE_PAIRS; p++) {
       const habCol = tableStartCol + p * 2;
       const chipCol = habCol + 1;
@@ -818,6 +884,9 @@ function archivar() {
       applyRowColorsAndBorder(main, tableStartCol, BASE_WIDTH);
     } catch (e) { Logger.log('archivar: clearing/restoring base area failed: ' + e); }
 
+    // Reset selector to neutral placeholder
+    try { main.getRange(SELECTOR_ROW, BASE_START_COL).setValue('Seleccionar fecha'); } catch(e){}
+
     // intentar limpieza extra
     try { removeExtraEmptyColumns(); } catch(e){ Logger.log('archivar: removeExtraEmptyColumns failed: ' + e); }
 
@@ -829,7 +898,6 @@ function archivar() {
   try { PropertiesService.getDocumentProperties().deleteProperty(PROP_KEY_LAST_COMBINED_ORIG); } catch(e){}
 
   if (originalDate) setLastArchive(originalDate);
-  try { main.getRange(TABLE_START_ROW, BASE_START_COL).setValue(verboseDateLabelFromOriginal(todayStr())); } catch(e){}
   updateFechaDropdown();
   removeExtraEmptyColumns();
   try { updateVersionLabel(); } catch (e) { Logger.log('after archivar updateVersionLabel failed: ' + e); }
@@ -861,12 +929,12 @@ function onEdit(e) {
 
     const row = range.getRow();
     const col = range.getColumn();
-    const selectorRow = TABLE_START_ROW;
+    const selectorRow = SELECTOR_ROW;
     const selectorCol = BASE_START_COL;
 
     if (row === selectorRow && col === selectorCol) {
       const selDisplay = (range.getDisplayValue() + '').trim();
-      if (!selDisplay) return;
+      if (!selDisplay || selDisplay === 'Seleccionar fecha') return;
       const map = buildFechaMapFromRegistro();
       if (map[selDisplay]) {
         processSelectorByOrig(map[selDisplay]);
@@ -888,18 +956,10 @@ function processSelectorByOrig(orig) {
   const { main } = getSheets();
   if (!orig) return;
   const fechas = getRegistroFechaList();
-  const last = getLastArchive();
-  if (last && last.date === orig && (Date.now() - last.ts) < 180000) {
-    Logger.log('Recién archivada — abre REGISTRO_GALA para revisar.');
-    clearTableAndReset(orig);
-    main.getRange(TABLE_START_ROW, BASE_START_COL).setValue(verboseDateLabelFromOriginal(todayStr()));
-    updateFechaDropdown();
-    return;
-  }
   if (fechas.indexOf(orig) !== -1) {
     cargarTablaDesdeRegistro(orig);
   } else {
-    clearTableAndReset(orig);
+    clearTableAndReset();
   }
 }
 
@@ -976,8 +1036,10 @@ function cargarTablaDesdeRegistro(fechaStr) {
   try {
     enforcePairStructure(main, tableStartCol, width);
 
-    const srcRows = TABLE_ROWS - 1; // desde fila 2 en registro (titulos + datos)
-    const srcRange = reg.getRange(2, foundCol, srcRows, width);
+    // En REGISTRO: fila 1 = fecha hoy, filas 2..titlesOffset-1 = selector/mostrando, fila titlesOffset = títulos, resto = datos
+    const titlesOffsetInReg = TITLES_ROW - TABLE_START_ROW + 1; // = 4
+    const srcRows = DATA_END_ROW - TITLES_ROW + 1; // = 30 (1 fila títulos + 29 datos)
+    const srcRange = reg.getRange(titlesOffsetInReg, foundCol, srcRows, width);
     const destRange = main.getRange(TITLES_ROW, tableStartCol, srcRows, width);
 
     try { safeBreakApartRange(destRange); } catch(e){}
@@ -990,8 +1052,10 @@ function cargarTablaDesdeRegistro(fechaStr) {
   // Finalmente actualizamos la propiedad a la anchura actual en pantalla
   setStoredWidth(width);
   updateFechaDropdown();
-  ensureSelectorMergedAndStyled(width);
-  main.getRange(TABLE_START_ROW, BASE_START_COL).setValue(verboseDateLabelFromOriginal(fechaStr));
+  updateHoyRow();
+  updateSelectorRow(width);
+  try { main.getRange(SELECTOR_ROW, BASE_START_COL).setValue('Seleccionar fecha'); } catch(e){}
+  updateMostrandoRow(verboseDateLabelFromOriginal(fechaStr));
 
   applyRowColorsAndBorder(main, tableStartCol, width);
   enforcePairStructure(main, tableStartCol, width);
@@ -1008,7 +1072,7 @@ function cargarTablaDesdeRegistro(fechaStr) {
   try { updateVersionLabel(); } catch (e) { Logger.log('after cargarTablaDesdeRegistro updateVersionLabel failed: ' + e); }
 }
 
-function clearTableAndReset(dateStr) {
+function clearTableAndReset() {
   const { main } = getSheets();
   const tableStartCol = BASE_START_COL;
 
@@ -1035,7 +1099,8 @@ function clearTableAndReset(dateStr) {
   try { PropertiesService.getDocumentProperties().deleteProperty(PROP_KEY_LAST_COMBINED_ORIG); } catch(e){}
 
   setStoredWidth(BASE_WIDTH);
-  ensureSelectorMergedAndStyled(BASE_WIDTH);
+  updateHoyRow();
+  updateSelectorRow(BASE_WIDTH);
   for (let p = 0; p < BASE_PAIRS; p++) {
     const habCol = tableStartCol + p*2;
     const chipCol = habCol + 1;
@@ -1049,15 +1114,8 @@ function clearTableAndReset(dateStr) {
   applyRowColorsAndBorder(main, tableStartCol, BASE_WIDTH);
   enforcePairStructure(main, tableStartCol, BASE_WIDTH);
   applyChipStyleToConcierge(main, tableStartCol, BASE_WIDTH);
-  const selCell = main.getRange(TABLE_START_ROW, BASE_START_COL);
-  if (dateStr && (typeof dateStr === 'string' && dateStr.trim() !== '')) {
-    const parsed = parsePossibleDate(dateStr);
-    const orig = parsed ? formatDateDDMMYYYY(parsed) : dateStr;
-    const label = verboseDateLabelFromOriginal(orig);
-    selCell.setValue(label);
-  } else {
-    selCell.setValue(verboseDateLabelFromOriginal(todayStr()));
-  }
+  try { main.getRange(SELECTOR_ROW, BASE_START_COL).setValue('Seleccionar fecha'); } catch(e){}
+  updateMostrandoRow(null);
   removeExtraEmptyColumns();
   try { updateVersionLabel(); } catch (e) { Logger.log('after clearTableAndReset updateVersionLabel failed: ' + e); }
 }
@@ -1076,14 +1134,14 @@ function getRegistroFechaList() {
   return fechas;
 }
 
-// updateFechaDropdown - opera siempre sobre la PRIMERA CELDA del selector
+// updateFechaDropdown - opera sobre SELECTOR_ROW con placeholder "Seleccionar fecha"
 function updateFechaDropdown() {
   const { main } = getSheets();
   try { normalizeStoredWidthToSheet(); } catch(e){}
   const startCol = BASE_START_COL;
   const effWidth = getEffectiveWidth(main, startCol, getStoredWidth());
   const fechasReg = getRegistroFechaList();
-  const labels = [];
+  const labels = ['Seleccionar fecha'];
   const map = {};
   for (let i = 0; i < fechasReg.length; i++) {
     const orig = fechasReg[i];
@@ -1098,9 +1156,9 @@ function updateFechaDropdown() {
 
   const rule = SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(true).build();
 
-  ensureSelectorMergedAndStyled(effWidth);
+  updateSelectorRow(effWidth);
 
-  const fechaCell = main.getRange(TABLE_START_ROW, startCol); // primera celda del selector
+  const fechaCell = main.getRange(SELECTOR_ROW, startCol); // primera celda del selector
   try {
     fechaCell.setDataValidation(rule);
   } catch (e) {
@@ -1109,7 +1167,7 @@ function updateFechaDropdown() {
 
   try {
     const cur = (fechaCell.getDisplayValue() + '').trim();
-    if (!cur && labels.length) fechaCell.setValue(labels[0]);
+    if (!cur) fechaCell.setValue('Seleccionar fecha');
   } catch (e) {
     Logger.log('updateFechaDropdown read/set fechaCell failed: ' + e);
   }
@@ -1127,13 +1185,17 @@ function applyRowColorsAndBorder(sheet, startCol, width) {
   const w = getEffectiveWidth(sheet, startCol, width);
   const topRow = TABLE_START_ROW;
   try {
+    // Filas de encabezado nuevas (fecha hoy, selector, mostrando): fondo oscuro
+    for (let r = TABLE_START_ROW; r < TITLES_ROW; r++) {
+      sheet.getRange(r, startCol, 1, w).setBackground(SELECTOR_COLOR);
+    }
+    sheet.getRange(TITLES_ROW, startCol, 1, w)
+      .setBackground(TITLE_COLOR).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
     for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
       const isEven = (r % 2 === 0);
       const bg = isEven ? EVEN_ROW_BG : ODD_ROW_BG;
       sheet.getRange(r, startCol, 1, w).setBackground(bg).setHorizontalAlignment('center').setVerticalAlignment('middle');
     }
-    sheet.getRange(TITLES_ROW, startCol, 1, w)
-      .setBackground(TITLE_COLOR).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
     const block = sheet.getRange(topRow, startCol, TABLE_ROWS, w);
     try { block.setBorder(true, true, true, true, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID_THICK); } catch(e){}
     try { block.setBorder(null, null, null, null, true, true, '#9aa7b0', SpreadsheetApp.BorderStyle.DOTTED); } catch(e){}
@@ -1341,7 +1403,7 @@ function removeExtraEmptyColumns() {
   if (actualWidth <= BASE_WIDTH) {
     // si actual <= base, aseguramos propiedad y selector
     setStoredWidth(BASE_WIDTH);
-    ensureSelectorMergedAndStyled(BASE_WIDTH);
+    updateSelectorRow(BASE_WIDTH);
     return;
   }
   // Si no hay contenido en las columnas extras -> borrarlas (forzado)
@@ -1358,7 +1420,7 @@ function removeExtraEmptyColumns() {
   if (!anyNonEmpty) {
     try { forceDeleteInsertedColumns(main, extraStart, extraCount); } catch (e) { Logger.log('removeExtraEmptyColumns forceDeleteInsertedColumns failed: ' + e); }
     setStoredWidth(BASE_WIDTH);
-    ensureSelectorMergedAndStyled(BASE_WIDTH);
+    updateSelectorRow(BASE_WIDTH);
   } else {
     // Dejamos la anchura según lo detectado
     setStoredWidth(actualWidth);
@@ -1424,73 +1486,33 @@ function dailyUpdateSelector() {
   try {
     const { main } = getSheets();
     normalizeStoredWidthToSheet();
-    const map = buildFechaMapFromRegistro(); // map[label] = orig
-    const selCell = main.getRange(TABLE_START_ROW, BASE_START_COL);
-    const cur = (selCell.getDisplayValue() + '').trim();
-    const todayLabel = verboseDateLabelFromOriginal(todayStr());
 
-    // construir etiqueta de AYER
-    const y = new Date();
-    y.setDate(y.getDate() - 1);
-    const yesterdayLabel = verboseDateLabelFromOriginal(formatDateDDMMYYYY(y));
+    // Actualizar la fila de "Fecha de hoy" (178) con la fecha actual
+    updateHoyRow();
 
-    // Si ya está la etiqueta de hoy, aseguramos estilos y terminamos
-    if (cur === todayLabel) {
-      ensureSelectorMergedAndStyled(getStoredWidth());
-      selCell.setFontSize(14);
-      selCell.setFontColor('#ffffff');
+    // Si hay una tabla cargada (mostrando no dice "selecciona una fecha"), no cambiar nada más
+    const mostrandoCell = main.getRange(MOSTRANDO_ROW, BASE_START_COL);
+    const mostrandoText = (mostrandoCell.getDisplayValue() + '').trim();
+    if (mostrandoText && mostrandoText !== 'selecciona una fecha' && mostrandoText.indexOf('Mostrando:') === 0) {
+      // Hay una tabla cargada: respetar selección del usuario, solo actualizar HOY
+      Logger.log('dailyUpdateSelector: tabla cargada detectada, solo se actualizó HOY row.');
       return;
     }
 
-    // Si está vacío -> poner HOY (comportamiento inicial)
-    if (!cur) {
-      try {
-        clearTableAndReset(todayStr());
-        const sel = main.getRange(TABLE_START_ROW, BASE_START_COL);
-        sel.setFontSize(14);
-        sel.setFontColor('#ffffff');
-      } catch (e) {
-        Logger.log('dailyUpdateSelector: clearTableAndReset falló (empty): ' + e);
+    // Sin tabla cargada: asegurar selector en "Seleccionar fecha" y mostrando en gris
+    updateSelectorRow(getStoredWidth());
+    try {
+      const cur = (main.getRange(SELECTOR_ROW, BASE_START_COL).getDisplayValue() + '').trim();
+      if (!cur || cur !== 'Seleccionar fecha') {
+        main.getRange(SELECTOR_ROW, BASE_START_COL).setValue('Seleccionar fecha');
       }
-      return;
-    }
-
-    // Si la etiqueta actual es AYER (o el label mapeado corresponde a la fecha de ayer) -> actualizar a HOY
-    let curMappedOrig = null;
-    try { curMappedOrig = map[cur] || null; } catch(e){}
-    const curIsYesterdayLabel = (cur === yesterdayLabel) || (
-      curMappedOrig && parsePossibleDate(curMappedOrig) && isSameDate(parsePossibleDate(curMappedOrig), y)
-    );
-
-    if (curIsYesterdayLabel) {
-      try {
-        selCell.setValue(todayLabel);
-        selCell.setFontSize(14);
-        selCell.setFontColor('#ffffff');
-
-        if (map[todayLabel]) {
-          try { processSelectorByOrig(map[todayLabel]); } catch (e) { Logger.log('dailyUpdateSelector: cargarTablaDesdeRegistro para hoy falló: ' + e); }
-        } else {
-          try { clearTableAndReset(todayStr()); } catch (e) { Logger.log('dailyUpdateSelector: clearTableAndReset para hoy falló: ' + e); }
-        }
-      } catch (e) {
-        Logger.log('dailyUpdateSelector error (update to today): ' + e);
-      }
-      return;
-    }
-
-    // Si no es vacío, no es ayer ni hoy => es selección manual, respetarla.
-    return;
+    } catch (e) { Logger.log('dailyUpdateSelector: reset selector failed: ' + e); }
+    updateMostrandoRow(null);
 
   } catch (e) {
     Logger.log('dailyUpdateSelector error: ' + e);
   }
 }
-function isSameDate(a,b){
-  if(!a || !b) return false;
-  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
-}
-
 /* ---------------------- createDailyTrigger ---------------------- */
 function createDailyTrigger() {
   try {
@@ -1767,7 +1789,8 @@ function combineWithExternal(url) {
     const effWidth = getEffectiveWidth(main, tableStartCol, neededWidth);
 
     // Ensure selector and structure
-    ensureSelectorMergedAndStyled(effWidth);
+    updateHoyRow();
+    updateSelectorRow(effWidth);
     enforcePairStructure(main, tableStartCol, effWidth);
 
     // Prepare 2D array rows x effWidth to write HAB+CONCIERGE pairs
@@ -1825,21 +1848,24 @@ function combineWithExternal(url) {
     try { main.getRange(TABLE_START_ROW, tableStartCol, TABLE_ROWS, effWidth).setHorizontalAlignment('center').setVerticalAlignment('middle'); } catch(e){}
 
     // Guardar marca de "combinado" si la tabla actual fue cargada desde registro
+    // Leer el MOSTRANDO_ROW para detectar si hay una tabla cargada de una fecha archivada
     try {
-      const selLabel = (main.getRange(TABLE_START_ROW, BASE_START_COL).getDisplayValue() + '').trim();
-      const map = buildFechaMapFromRegistro();
-      const orig = map[selLabel] || null;
-      if (orig) {
-        try { PropertiesService.getDocumentProperties().setProperty(PROP_KEY_LAST_COMBINED_ORIG, orig); } catch(e){ Logger.log('combineWithExternal: could not set PROP_KEY_LAST_COMBINED_ORIG: ' + e); }
+      const mostrandoText = (main.getRange(MOSTRANDO_ROW, BASE_START_COL).getDisplayValue() + '').trim();
+      if (mostrandoText && mostrandoText.indexOf('Mostrando:') === 0) {
+        const mostrandoFecha = mostrandoText.replace(/^Mostrando:\s*/, '').trim();
+        const map = buildFechaMapFromRegistro();
+        const orig = map[mostrandoFecha] || mostrandoFecha || null;
+        if (orig) {
+          try { PropertiesService.getDocumentProperties().setProperty(PROP_KEY_LAST_COMBINED_ORIG, orig); } catch(e){ Logger.log('combineWithExternal: could not set PROP_KEY_LAST_COMBINED_ORIG: ' + e); }
+        }
       }
     } catch (e) {
       Logger.log('combineWithExternal: could not determine original date to mark as combined: ' + e);
     }
 
-    // Cambiar el selector a HOY por defecto (solicitado)
-    try {
-      main.getRange(TABLE_START_ROW, BASE_START_COL).setValue(verboseDateLabelFromOriginal(todayStr()));
-    } catch (e) { Logger.log('combineWithExternal: could not set selector to today: ' + e); }
+    // Asegurar que el selector queda en neutro y HOY row actualizado
+    try { main.getRange(SELECTOR_ROW, BASE_START_COL).setValue('Seleccionar fecha'); } catch(e){}
+    updateMostrandoRow(null);
 
     // Actualizaciones finales
     removeExtraEmptyColumns();
