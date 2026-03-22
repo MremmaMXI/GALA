@@ -1,5 +1,5 @@
 /**
- * GalaManager.gs - Versión V25 corregida y completa (actualizada)
+ * GalaManager.gs - Versión V26 corregida y completa (actualizada)
  *
  * Cambios importantes aplicados (resumen):
  * - Detecta el ancho REAL ocupado por la tabla (escaneando contenido y merges) y usa ese ancho
@@ -58,7 +58,7 @@ const PROP_KEY_UPDATE_LOCK = 'GALA_UPDATE_LOCKED';
 const PROP_KEY_LAST_LOADED_REG_COL = 'GALA_LAST_LOADED_REG_COL';
 const PROP_KEY_LAST_COMBINED_ORIG = 'GALA_LAST_COMBINED_ORIG';
 
-const VERSION_LABEL_TEXT = 'RGManager v110.25.0';
+const VERSION_LABEL_TEXT = 'RGManager v111.25.0';
 const VERSION_LABEL_ROW = 210;
 const VERSION_LABEL_COLOR = '#0b5394';
 
@@ -607,6 +607,7 @@ function actualizar() {
     }
 
     enforcePairStructure(main, tableStartCol, effWidth);
+    applyChipStyleToConcierge(main, tableStartCol, effWidth);
     applyRowColorsAndBorder(main, tableStartCol, effWidth);
 
     main.getRange(TABLE_START_ROW, tableStartCol, TABLE_ROWS, effWidth).setHorizontalAlignment('center').setVerticalAlignment('middle');
@@ -813,6 +814,7 @@ function archivar() {
     try {
       main.getRange(DATA_START_ROW, tableStartCol, ROWS_PER_COLUMN, BASE_WIDTH).clearContent();
       enforcePairStructure(main, tableStartCol, BASE_WIDTH);
+      applyChipStyleToConcierge(main, tableStartCol, BASE_WIDTH);
       applyRowColorsAndBorder(main, tableStartCol, BASE_WIDTH);
     } catch (e) { Logger.log('archivar: clearing/restoring base area failed: ' + e); }
 
@@ -993,6 +995,7 @@ function cargarTablaDesdeRegistro(fechaStr) {
 
   applyRowColorsAndBorder(main, tableStartCol, width);
   enforcePairStructure(main, tableStartCol, width);
+  applyChipStyleToConcierge(main, tableStartCol, width);
 
   for (let p = 0; p < Math.floor(width/2); p++) {
     const habCol = tableStartCol + p*2;
@@ -1045,6 +1048,7 @@ function clearTableAndReset(dateStr) {
   }
   applyRowColorsAndBorder(main, tableStartCol, BASE_WIDTH);
   enforcePairStructure(main, tableStartCol, BASE_WIDTH);
+  applyChipStyleToConcierge(main, tableStartCol, BASE_WIDTH);
   const selCell = main.getRange(TABLE_START_ROW, BASE_START_COL);
   if (dateStr && (typeof dateStr === 'string' && dateStr.trim() !== '')) {
     const parsed = parsePossibleDate(dateStr);
@@ -1116,6 +1120,7 @@ function ensureConciergeValidationOnBase() {
   const { main } = getSheets();
   enforcePairStructure(main, BASE_START_COL, BASE_WIDTH);
   applyRowColorsAndBorder(main, BASE_START_COL, BASE_WIDTH);
+  applyChipStyleToConcierge(main, BASE_START_COL, BASE_WIDTH);
   updateFechaDropdown();
 }
 function applyRowColorsAndBorder(sheet, startCol, width) {
@@ -1137,7 +1142,6 @@ function applyRowColorsAndBorder(sheet, startCol, width) {
 
 /* ---------------------- VALIDATIONS & CF ---------------------- */
 function enforcePairStructure(sheet, startCol, width) {
-  const conciergeRule = SpreadsheetApp.newDataValidation().requireValueInList(CONCIERGE_LIST, true).setAllowInvalid(false).build();
   const pairs = Math.floor(width / 2);
   for (let p = 0; p < pairs; p++) {
     const habCol = startCol + p * 2;
@@ -1146,7 +1150,6 @@ function enforcePairStructure(sheet, startCol, width) {
     const chipRange = sheet.getRange(DATA_START_ROW, chipCol, ROWS_PER_COLUMN, 1);
     try { habRange.clearDataValidations(); } catch(e){}
     habRange.setFontWeight('normal').setFontColor('#000000').setHorizontalAlignment('center').setVerticalAlignment('middle');
-    chipRange.setDataValidation(conciergeRule);
     chipRange.setFontWeight('normal').setFontColor('#215a6c').setHorizontalAlignment('center').setVerticalAlignment('middle');
     try {
       sheet.getRange(TITLES_ROW, habCol).setValue('HAB');
@@ -1160,6 +1163,44 @@ function enforcePairStructure(sheet, startCol, width) {
     try { sheet.getRange(DATA_START_ROW, lastCol, ROWS_PER_COLUMN, 1).clearDataValidations(); } catch(e){}
   }
   try { applyConciergeConditionalFormatting(sheet, startCol, width); } catch(e){ Logger.log('applyConciergeConditionalFormatting failed: ' + e); }
+}
+
+function applyChipStyleToConcierge(sheet, startCol, width) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const spreadsheetId = ss.getId();
+    const sheetId = sheet.getSheetId();
+    const pairs = Math.floor(width / 2);
+    const requests = [];
+    for (let p = 0; p < pairs; p++) {
+      const chipCol = startCol + p * 2 + 1; // columna CONCIERGE (1-indexed)
+      requests.push({
+        setDataValidation: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: DATA_START_ROW - 1,  // 0-indexed
+            endRowIndex: DATA_END_ROW,           // 0-indexed exclusive
+            startColumnIndex: chipCol - 1,       // 0-indexed
+            endColumnIndex: chipCol              // 0-indexed exclusive
+          },
+          rule: {
+            condition: {
+              type: 'ONE_OF_LIST',
+              values: CONCIERGE_LIST.map(v => ({ userEnteredValue: v }))
+            },
+            showCustomUi: true,
+            strict: true
+          }
+        }
+      });
+    }
+    if (requests.length > 0) {
+      Sheets.Spreadsheets.batchUpdate({ requests: requests }, spreadsheetId);
+      Logger.log('applyChipStyleToConcierge: chip style aplicado a ' + pairs + ' columnas CONCIERGE.');
+    }
+  } catch (e) {
+    Logger.log('applyChipStyleToConcierge error: ' + e);
+  }
 }
 
 /* ---------------------- Conditional Formatting (MAIN) ---------------------- */
@@ -1777,6 +1818,7 @@ function combineWithExternal(url) {
 
     // Reapply pair enforcement, conditional formatting, row coloring and borders
     enforcePairStructure(main, tableStartCol, effWidth);
+    applyChipStyleToConcierge(main, tableStartCol, effWidth);
     applyRowColorsAndBorder(main, tableStartCol, effWidth);
 
     // Ajustar alineación e intentar limpiar celdas sobrantes si existe espacio a la derecha
